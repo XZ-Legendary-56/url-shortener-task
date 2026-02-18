@@ -1,0 +1,40 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+url-shortener
+
+# Test binaries
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+*.log
+Dockerfile
+docker-compose.yml
+.dockerignore
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
+
+# Environment files
+.env
+!*.example
+
+# Temporary files
+tmp/
+temp/
