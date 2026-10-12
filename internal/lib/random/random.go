@@ -1,28 +1,21 @@
 package random
 
-import (
-	"math/rand"
-	"sync"
-	"time"
-)
+import "math/rand/v2"
 
-var (
-	rng  *rand.Rand
-	once sync.Once
-)
+const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+	"abcdefghijklmnopqrstuvwxyz" +
+	"0123456789" + "_"
 
+// NewRandomString возвращает строку длины size из символов [A-Za-z0-9_].
+//
+// Безопасна для вызова из нескольких горутин: функции верхнего уровня
+// math/rand/v2 используют глобальный генератор, который потокобезопасен
+// и сидируется автоматически. Раньше здесь был общий *rand.Rand, который
+// не потокобезопасен — sync.Once защищал только его создание, а не вызовы.
 func NewRandomString(size int) string {
-	once.Do(func() {
-		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
-	})
-
-	chars := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-		"abcdefghijklmnopqrstuvwxyz" +
-		"0123456789" + "_")
-
-	b := make([]rune, size)
+	b := make([]byte, size)
 	for i := range b {
-		b[i] = chars[rng.Intn(len(chars))]
+		b[i] = chars[rand.IntN(len(chars))]
 	}
 
 	return string(b)
