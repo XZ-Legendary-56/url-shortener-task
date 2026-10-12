@@ -1,7 +1,10 @@
 package redirect
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"url-shortener/internal/http-server/handlers/redirect/mocks"
-	"url-shortener/internal/lib/api"
+	"url-shortener/internal/lib/api/response"
 	"url-shortener/internal/storage"
 )
 
-func TestSaveHandler(t *testing.T) {
+func TestRedirectHandler(t *testing.T) {
 	cases := []struct {
 		name           string
 		alias          string
@@ -36,7 +39,7 @@ func TestSaveHandler(t *testing.T) {
 			alias:          "",
 			url:            "",
 			respError:      "invalid request",
-			expectedStatus: http.StatusOK, // Возвращает JSON с ошибкой
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "URL not found",
@@ -44,7 +47,7 @@ func TestSaveHandler(t *testing.T) {
 			url:            "",
 			mockError:      storage.ErrURLNotFound,
 			respError:      "not found",
-			expectedStatus: http.StatusOK,
+			expectedStatus: http.StatusNotFound,
 		},
 		{
 			name:           "Internal error",
@@ -52,7 +55,7 @@ func TestSaveHandler(t *testing.T) {
 			url:            "",
 			mockError:      errors.New("database connection failed"),
 			respError:      "internal error",
-			expectedStatus: http.StatusOK,
+			expectedStatus: http.StatusInternalServerError,
 		},
 		{
 			name:           "Very long alias",
@@ -85,48 +88,36 @@ func TestSaveHandler(t *testing.T) {
 			t.Parallel()
 
 			urlGetterMock := mocks.NewURLGetter(t)
-
-			// Настройка мока в зависимости от сценария
-			if tc.mockError != nil {
-				urlGetterMock.On("GetURL", tc.alias).
-					Return("", tc.mockError).Once()
-			} else if tc.url != "" {
-				urlGetterMock.On("GetURL", tc.alias).
-					Return(tc.url, nil).Once()
-			} else if tc.respError == "invalid request" {
-				// Для пустого alias мок может не вызываться
-				// но мы всё равно ожидаем, что он не будет вызван
-			}
-
-			r := chi.NewRouter()
-			r.Get("/{alias}", New(slog.Default(), urlGetterMock))
-
-			ts := httptest.NewServer(r)
-			defer ts.Close()
-
-			// Специальная обработка для случая с пустым alias
-			requestURL := ts.URL
 			if tc.alias != "" {
-				requestURL += "/" + tc.alias
+				urlGetterMock.On("GetURL", tc.alias).
+					Return(tc.url, tc.mockError).Once()
 			}
 
-			redirectedToURL, err := api.GetRedirect(requestURL)
+			handler := New(slog.New(slog.NewTextHandler(io.Discard, nil)), urlGetterMock)
 
-			if tc.respError != "" {
-				// Ожидаем ошибку в JSON ответе
-				assert.Error(t, err)
-				// Проверяем, что err содержит нужное сообщение
-				// Примечание: api.GetRedirect возвращает ошибку, а не JSON
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.url, redirectedToURL)
+			// Обработчик вызываем через chi, чтобы в контексте был параметр
+			// alias. Пустой alias через роутер не передать ("/" не совпадёт
+			// с "/{alias}"), поэтому кладём пустой параметр в контекст сами.
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("alias", tc.alias)
+
+			req := httptest.NewRequest(http.MethodGet, "/"+tc.alias, nil)
+			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, tc.expectedStatus, rr.Code)
+
+			if tc.respError == "" {
+				assert.Equal(t, tc.url, rr.Header().Get("Location"))
+				return
 			}
 
-			// Проверяем, что мок был вызван ожидаемое количество раз
-			if tc.alias != "" && tc.respError != "invalid request" {
-				urlGetterMock.AssertExpectations(t)
-			}
+			var body response.Response
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+			assert.Equal(t, response.StatusError, body.Status)
+			assert.Equal(t, tc.respError, body.Error)
 		})
 	}
 }
-

@@ -79,7 +79,7 @@ Response:
 }
 ```
 
-При отправке уже существующего url будет ответ:
+При отправке уже существующего url или alias будет ответ `409 Conflict`:
 ```json
 {
     "status": "Error",
@@ -87,16 +87,38 @@ Response:
 }
 ```
 
+Коды ответов `POST /url`:
+
+| Код | Когда |
+|-----|-------|
+| `201 Created` | ссылка сохранена |
+| `400 Bad Request` | невалидный JSON, нет поля `url` или это не URL |
+| `409 Conflict` | такой `url` или `alias` уже есть |
+| `500 Internal Server Error` | ошибка хранилища |
+
 Получение оригинального URL
 GET `/{alias}`
-При успехе: HTTP 302 Redirect на оригинальный URL
-При ошибке: JSON с описанием ошибки
 
-Request:
-non
+| Код | Когда |
+|-----|-------|
+| `302 Found` | редирект, адрес в заголовке `Location` |
+| `404 Not Found` | алиас не найден, JSON `{"status":"Error","error":"not found"}` |
+| `500 Internal Server Error` | ошибка хранилища |
 
-Response:
-html по указанному адресу
+## Тесты
+
+Юнит-тесты и функциональные тесты (`tests/`) запускаются одной командой.
+Функциональные тесты сами поднимают сервис с in-memory хранилищем и ходят в него по HTTP:
+
+```bash
+go test -race ./...
+```
+
+Прогнать функциональные тесты против уже запущенного сервиса (например, из docker-compose с PostgreSQL):
+
+```bash
+URL_SHORTENER_BASE_URL=http://localhost:8082 go test ./tests/...
+```
 
 
 ## Хранилища

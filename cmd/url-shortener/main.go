@@ -6,15 +6,11 @@ import (
 	"net/http"
 	"os"
 	"url-shortener/internal/config"
-	"url-shortener/internal/http-server/handlers/redirect"
-	"url-shortener/internal/http-server/handlers/url/save"
+	"url-shortener/internal/http-server/router"
 	"url-shortener/internal/lib/logger/sl"
 	appStorage "url-shortener/internal/storage"
 	"url-shortener/internal/storage/memory"
 	"url-shortener/internal/storage/postgres"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 func main() {
@@ -52,22 +48,11 @@ func main() {
 	}
 	defer store.Close()
 
-	// TODO: init router: chi, "chi render"
-	router := chi.NewRouter()
-
-	router.Use(middleware.RequestID)
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-	router.Use(middleware.URLFormat)
-
-	router.Post("/url", save.New(log, store))
-	router.Get("/{alias}", redirect.New(log, store))
-
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Address))
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPServer.Address,
-		Handler:      router,
+		Handler:      router.New(log, store),
 		ReadTimeout:  cfg.HTTPServer.Timeout,
 		WriteTimeout: cfg.HTTPServer.Timeout,
 		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
